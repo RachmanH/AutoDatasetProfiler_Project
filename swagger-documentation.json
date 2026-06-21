@@ -1,0 +1,1410 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AutoDataset Profiler API",
+    "description": "API untuk melakukan Exploratory Data Analysis (EDA) otomatis pada dataset tabular (CSV/XLSX).\n\nDilengkapi dengan fitur profiling kolom, deteksi kualitas data, visualisasi EDA, integrasi LLM untuk insight dataset, serta generator PRD riset akademis.\n\nDibangun sebagai proyek UAS mata kuliah Web Service.\n\n**Tech Stack:** Python FastAPI + React Vite + LLM (OpenCode Zen API)",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Pengembang",
+      "email": "pengembang@example.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Development Server (Local)"
+    },
+    {
+      "url": "http://127.0.0.1:8000",
+      "description": "Development Server (Loopback)"
+    }
+  ],
+  "paths": {
+    "/api/datasets/upload": {
+      "post": {
+        "summary": "Upload Dataset",
+        "description": "Mengunggah file dataset dalam format CSV atau XLSX (maksimal 20 MB). File akan diparse menggunakan pandas dan disimpan sementara di memory server. Mengembalikan metadata dataset serta preview 5 baris pertama.",
+        "operationId": "uploadDataset",
+        "tags": [
+          "Dataset"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "File dataset (CSV atau XLSX). Maksimal 20 MB."
+                  }
+                }
+              },
+              "example": {
+                "file": "dataset.csv"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dataset berhasil diupload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request tidak valid (format file tidak didukung, ukuran file melebihi batas, dataset kosong, atau tidak memiliki kolom)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Unsupported file format. Please upload CSV or XLSX."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error (tipe konten tidak sesuai)"
+          }
+        }
+      }
+    },
+    "/api/datasets/analyze": {
+      "post": {
+        "summary": "Analisis Dataset",
+        "description": "Melakukan analisis mendalam terhadap dataset yang sudah diupload. Mencakup:\n- Profiling tipe data setiap kolom (numeric, categorical, datetime, boolean, text, id_like, constant)\n- Deteksi kualitas data (missing values, duplicates, ID-like, constant, high-cardinality)\n- Visualisasi EDA charts (distribusi kolom, missing values, recommended charts dari LLM)\n- Integrasi LLM untuk insight dataset (hanya fingerprint, bukan data mentah)\n- Rule-based ML task suggestion\n- Preprocessing previews (before/after)\n\nData disimpan di memory dengan TTL 1 jam.",
+        "operationId": "analyzeDataset",
+        "tags": [
+          "Dataset"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Analisis berhasil dilakukan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dataset tidak ditemukan atau sudah expired (TTL 1 jam)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Dataset not found or expired."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Target column tidak ditemukan dalam dataset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Target column 'nonexistent' not found in dataset."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/dataset-understanding": {
+      "post": {
+        "summary": "LLM Dataset Understanding",
+        "description": "Mendapatkan insight dari LLM (Large Language Model) berdasarkan fingerprint dataset. Endpoint ini berguna jika ingin memanggil LLM secara terpisah tanpa melakukan analisis ulang. LLM hanya menerima fingerprint dataset (metadata + profil kolom + preview), bukan data mentah.",
+        "operationId": "getLlmUnderstanding",
+        "tags": [
+          "LLM"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LLMRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "LLM insight berhasil didapatkan (success=true) atau LLM tidak tersedia (success=false dengan message)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dataset tidak ditemukan atau sudah expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/suggestions": {
+      "post": {
+        "summary": "Research Suggestions",
+        "description": "Mendapatkan saran riset akademis berbasis LLM berdasarkan hasil analisis dataset. Output meliputi:\n- 3 pilihan judul riset dalam bahasa Indonesia formal akademis\n- 2-3 saran task ML dengan metode dan metrik evaluasi\n- 3-5 research questions\n\nSangat berguna untuk mahasiswa yang ingin menyusun proposal skripsi/tugas akhir.",
+        "operationId": "researchSuggestions",
+        "tags": [
+          "Research"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchPRDSuggestionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saran riset berhasil dibuat (success=true) atau gagal (success=false dengan array kosong)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchPRDSuggestionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dataset tidak ditemukan atau sudah expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/generate-prd": {
+      "post": {
+        "summary": "Generate PRD Riset",
+        "description": "Membangkitkan dokumen PRD (Product Requirements Document) riset lengkap dalam format Markdown. Dokumen mencakup:\n1. Latar Belakang\n2. Rumusan Masalah\n3. Tujuan Riset\n4. Deskripsi Dataset\n5. Task Machine Learning\n6. Metodologi (Preprocessing, Model, Metrik Evaluasi, Validasi)\n7. Rencana Eksperimen\n8. Risiko dan Mitigasi\n9. Timeline Estimasi\n10. Referensi Awal\n\nBahasa yang digunakan adalah bahasa Indonesia formal akademis.",
+        "operationId": "researchGeneratePrd",
+        "tags": [
+          "Research"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchPRDRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PRD berhasil dibuat (success=true) atau gagal (success=false dengan prd_markdown kosong)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchPRDResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dataset tidak ditemukan atau sudah expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DatasetMetadata": {
+        "type": "object",
+        "description": "Metadata dari file dataset yang diupload",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Nama file yang sudah disanitasi"
+          },
+          "file_type": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "xlsx"
+            ],
+            "description": "Tipe file dataset"
+          },
+          "file_size_mb": {
+            "type": "number",
+            "format": "float",
+            "description": "Ukuran file dalam MB"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Jumlah baris/records dalam dataset"
+          },
+          "columns": {
+            "type": "integer",
+            "description": "Jumlah kolom/fitur dalam dataset"
+          }
+        },
+        "required": [
+          "filename",
+          "file_type",
+          "file_size_mb",
+          "rows",
+          "columns"
+        ]
+      },
+      "UploadResponse": {
+        "type": "object",
+        "description": "Response setelah berhasil mengupload dataset",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Indikator sukses/gagal"
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "ID unik dataset (format: ds_xxxxxxxxxxxx). Gunakan ID ini untuk endpoint lain."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Nama file yang diupload"
+          },
+          "file_type": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "xlsx"
+            ],
+            "description": "Tipe file"
+          },
+          "file_size_mb": {
+            "type": "number",
+            "format": "float",
+            "description": "Ukuran file dalam MB"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Jumlah baris"
+          },
+          "columns": {
+            "type": "integer",
+            "description": "Jumlah kolom"
+          },
+          "preview": {
+            "type": "array",
+            "description": "Preview 5 baris pertama dataset (array of objects, key=column name, value=cell value)",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "example": [
+              {
+                "age": 25,
+                "name": "John",
+                "salary": 5000000
+              }
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "dataset_id",
+          "filename",
+          "file_type",
+          "file_size_mb",
+          "rows",
+          "columns",
+          "preview"
+        ]
+      },
+      "AnalyzeRequest": {
+        "type": "object",
+        "description": "Request untuk menganalisis dataset. Dataset harus sudah diupload terlebih dahulu.",
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset yang diperoleh dari endpoint upload"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "Nama kolom target (opsional). Jika tidak disediakan, sistem akan mendeteksi secara otomatis.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "dataset_id"
+        ]
+      },
+      "ColumnStats": {
+        "type": "object",
+        "description": "Statistik deskriptif untuk kolom numerik",
+        "properties": {
+          "mean": {
+            "type": "number",
+            "format": "float",
+            "description": "Rata-rata (mean)",
+            "nullable": true
+          },
+          "median": {
+            "type": "number",
+            "format": "float",
+            "description": "Median",
+            "nullable": true
+          },
+          "std": {
+            "type": "number",
+            "format": "float",
+            "description": "Standar deviasi",
+            "nullable": true
+          },
+          "min": {
+            "type": "number",
+            "format": "float",
+            "description": "Nilai minimum",
+            "nullable": true
+          },
+          "max": {
+            "type": "number",
+            "format": "float",
+            "description": "Nilai maksimum",
+            "nullable": true
+          }
+        }
+      },
+      "ColumnProfile": {
+        "type": "object",
+        "description": "Profil lengkap dari satu kolom dataset",
+        "properties": {
+          "column": {
+            "type": "string",
+            "description": "Nama kolom"
+          },
+          "dtype": {
+            "type": "string",
+            "description": "Tipe data pandas (contoh: int64, float64, object, bool, datetime64[ns])"
+          },
+          "detected_type": {
+            "type": "string",
+            "enum": [
+              "numeric",
+              "categorical",
+              "datetime",
+              "boolean",
+              "text",
+              "id_like",
+              "constant",
+              "unknown"
+            ],
+            "description": "Tipe data yang dideteksi oleh sistem"
+          },
+          "unique_count": {
+            "type": "integer",
+            "description": "Jumlah nilai unik dalam kolom"
+          },
+          "missing_count": {
+            "type": "integer",
+            "description": "Jumlah nilai yang hilang (null/NaN)"
+          },
+          "missing_percentage": {
+            "type": "number",
+            "format": "float",
+            "description": "Persentase nilai yang hilang"
+          },
+          "sample_values": {
+            "type": "array",
+            "description": "5 contoh nilai pertama dari kolom",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ColumnStats"
+          },
+          "note": {
+            "type": "string",
+            "description": "Catatan khusus (contoh: peringatan ID-like column, constant column, atau missing rate tinggi)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "column",
+          "dtype",
+          "detected_type",
+          "unique_count",
+          "missing_count",
+          "missing_percentage",
+          "sample_values"
+        ]
+      },
+      "DataQuality": {
+        "type": "object",
+        "description": "Laporan kualitas dataset secara keseluruhan",
+        "properties": {
+          "total_missing_values": {
+            "type": "integer",
+            "description": "Total seluruh nilai yang hilang dalam dataset"
+          },
+          "duplicate_rows": {
+            "type": "integer",
+            "description": "Jumlah baris duplikat"
+          },
+          "duplicate_percentage": {
+            "type": "number",
+            "format": "float",
+            "description": "Persentase baris duplikat terhadap total baris"
+          },
+          "id_like_columns": {
+            "type": "array",
+            "description": "Daftar kolom yang terdeteksi sebagai ID (tidak berguna sebagai fitur)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constant_columns": {
+            "type": "array",
+            "description": "Daftar kolom yang hanya memiliki 1 nilai unik (konstan)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "high_cardinality_columns": {
+            "type": "array",
+            "description": "Daftar kolom kategorikal dengan kardinalitas tinggi (>50 nilai unik)",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "total_missing_values",
+          "duplicate_rows",
+          "duplicate_percentage",
+          "id_like_columns",
+          "constant_columns",
+          "high_cardinality_columns"
+        ]
+      },
+      "DatasetFingerprint": {
+        "type": "object",
+        "description": "Ringkasan dataset yang dikirim ke LLM (bukan data mentah, hanya fingerprint untuk keamanan dan efisiensi)",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/DatasetMetadata"
+          },
+          "column_names": {
+            "type": "array",
+            "description": "Daftar nama kolom",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preview_rows": {
+            "type": "array",
+            "description": "Preview 5 baris pertama",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "column_profiles": {
+            "type": "array",
+            "description": "Profil setiap kolom",
+            "items": {
+              "$ref": "#/components/schemas/ColumnProfile"
+            }
+          },
+          "data_quality": {
+            "$ref": "#/components/schemas/DataQuality"
+          },
+          "target_column_selected_by_user": {
+            "type": "string",
+            "description": "Kolom target yang dipilih oleh user (jika ada)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "metadata",
+          "column_names",
+          "preview_rows",
+          "column_profiles",
+          "data_quality"
+        ]
+      },
+      "Overview": {
+        "type": "object",
+        "description": "Ringkasan overview dataset untuk ditampilkan di dashboard",
+        "properties": {
+          "rows": {
+            "type": "integer",
+            "description": "Jumlah baris"
+          },
+          "columns": {
+            "type": "integer",
+            "description": "Jumlah kolom"
+          },
+          "numeric_columns": {
+            "type": "integer",
+            "description": "Jumlah kolom numerik"
+          },
+          "categorical_columns": {
+            "type": "integer",
+            "description": "Jumlah kolom kategorikal"
+          },
+          "datetime_columns": {
+            "type": "integer",
+            "description": "Jumlah kolom datetime"
+          },
+          "boolean_columns": {
+            "type": "integer",
+            "description": "Jumlah kolom boolean"
+          },
+          "text_columns": {
+            "type": "integer",
+            "description": "Jumlah kolom teks"
+          },
+          "id_like_columns": {
+            "type": "integer",
+            "description": "Jumlah kolom ID-like"
+          },
+          "duplicate_rows": {
+            "type": "integer",
+            "description": "Jumlah baris duplikat"
+          },
+          "total_missing_values": {
+            "type": "integer",
+            "description": "Total missing values"
+          },
+          "suggested_task": {
+            "type": "string",
+            "description": "Task ML yang disarankan (dari primary suggestion)"
+          }
+        },
+        "required": [
+          "rows",
+          "columns",
+          "numeric_columns",
+          "categorical_columns",
+          "datetime_columns",
+          "boolean_columns",
+          "text_columns",
+          "id_like_columns",
+          "duplicate_rows",
+          "total_missing_values",
+          "suggested_task"
+        ]
+      },
+      "RuleBasedTaskSuggestion": {
+        "type": "object",
+        "description": "Saran task ML berdasarkan aturan (rule-based) tanpa LLM",
+        "properties": {
+          "suggested_task": {
+            "type": "string",
+            "enum": [
+              "binary_classification",
+              "multiclass_classification",
+              "regression",
+              "count_regression",
+              "clustering_candidate"
+            ],
+            "description": "Task ML yang disarankan"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Alasan di balik saran task"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "Kolom target yang terdeteksi (nullable untuk clustering)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "suggested_task",
+          "reason"
+        ]
+      },
+      "TargetCandidate": {
+        "type": "object",
+        "description": "Kandidat kolom target yang direkomendasikan oleh LLM",
+        "properties": {
+          "column": {
+            "type": "string",
+            "description": "Nama kolom kandidat target"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Alasan mengapa kolom ini cocok sebagai target"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Tingkat kepercayaan LLM terhadap kandidat ini"
+          }
+        },
+        "required": [
+          "column",
+          "reason",
+          "confidence"
+        ]
+      },
+      "RecommendedChart": {
+        "type": "object",
+        "description": "Rekomendasi chart dari LLM untuk visualisasi EDA",
+        "properties": {
+          "chart_type": {
+            "type": "string",
+            "enum": [
+              "bar",
+              "histogram",
+              "pie",
+              "scatter",
+              "boxplot",
+              "grouped_bar"
+            ],
+            "description": "Tipe chart yang direkomendasikan"
+          },
+          "title": {
+            "type": "string",
+            "description": "Judul chart"
+          },
+          "columns": {
+            "type": "array",
+            "description": "Kolom-kolom yang terlibat dalam chart",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "description": "Alasan mengapa chart ini penting"
+          }
+        },
+        "required": [
+          "chart_type",
+          "title",
+          "columns",
+          "reason"
+        ]
+      },
+      "PreprocessingStep": {
+        "type": "object",
+        "description": "Langkah preprocessing yang direkomendasikan oleh LLM",
+        "properties": {
+          "step_type": {
+            "type": "string",
+            "enum": [
+              "handle_missing",
+              "label_encode",
+              "one_hot_encode",
+              "drop_column",
+              "scale",
+              "handle_outlier"
+            ],
+            "description": "Jenis langkah preprocessing"
+          },
+          "columns": {
+            "type": "array",
+            "description": "Kolom yang akan diproses",
+            "items": {
+              "type": "string"
+            }
+          },
+          "method": {
+            "type": "string",
+            "description": "Metode spesifik (contoh: mean_imputation, label_encoding, minmax_scaling, cap_outliers)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Alasan mengapa langkah ini diperlukan"
+          }
+        },
+        "required": [
+          "step_type",
+          "columns",
+          "method",
+          "reason"
+        ]
+      },
+      "PreprocessingPreview": {
+        "type": "object",
+        "description": "Preview before/after dari langkah preprocessing",
+        "properties": {
+          "step_type": {
+            "type": "string",
+            "description": "Jenis langkah preprocessing"
+          },
+          "column": {
+            "type": "string",
+            "description": "Kolom yang diproses"
+          },
+          "method": {
+            "type": "string",
+            "description": "Metode yang digunakan"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Alasan preprocessing"
+          },
+          "before_sample": {
+            "type": "array",
+            "description": "Sample data sebelum preprocessing",
+            "items": {}
+          },
+          "after_sample": {
+            "type": "array",
+            "description": "Sample data setelah preprocessing",
+            "items": {}
+          },
+          "summary": {
+            "type": "string",
+            "description": "Ringkasan perubahan yang akan terjadi"
+          }
+        },
+        "required": [
+          "step_type",
+          "column",
+          "method",
+          "reason",
+          "before_sample",
+          "after_sample",
+          "summary"
+        ]
+      },
+      "LLMUnderstanding": {
+        "type": "object",
+        "description": "Hasil pemahaman LLM terhadap dataset (berdasarkan fingerprint, bukan data mentah)",
+        "properties": {
+          "dataset_understanding": {
+            "type": "string",
+            "description": "Pemahaman LLM tentang konteks dataset (1 kalimat)"
+          },
+          "domain_guess": {
+            "type": "string",
+            "description": "Tebakan domain dataset (1-3 kata)"
+          },
+          "target_candidates": {
+            "type": "array",
+            "description": "Kandidat kolom target (maksimal 2)",
+            "items": {
+              "$ref": "#/components/schemas/TargetCandidate"
+            }
+          },
+          "suggested_task": {
+            "type": "string",
+            "enum": [
+              "binary_classification",
+              "multiclass_classification",
+              "regression",
+              "count_regression",
+              "clustering_candidate",
+              "unknown"
+            ],
+            "description": "Task ML yang disarankan oleh LLM"
+          },
+          "task_reason": {
+            "type": "string",
+            "description": "Alasan pemilihan task"
+          },
+          "recommended_eda": {
+            "type": "array",
+            "description": "Rekomendasi EDA (backward compatibility)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_charts": {
+            "type": "array",
+            "description": "Rekomendasi chart EDA terstruktur",
+            "items": {
+              "$ref": "#/components/schemas/RecommendedChart"
+            }
+          },
+          "preprocessing_recommendations": {
+            "type": "array",
+            "description": "Rekomendasi preprocessing (backward compatibility)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preprocessing_steps": {
+            "type": "array",
+            "description": "Langkah preprocessing terstruktur",
+            "items": {
+              "$ref": "#/components/schemas/PreprocessingStep"
+            }
+          },
+          "methodological_warnings": {
+            "type": "array",
+            "description": "Peringatan metodologis dari LLM (maksimal 3)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user_confirmation_needed": {
+            "type": "array",
+            "description": "Hal-hal yang perlu dikonfirmasi oleh user",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "dataset_understanding",
+          "domain_guess",
+          "target_candidates",
+          "suggested_task",
+          "task_reason",
+          "recommended_eda",
+          "preprocessing_recommendations",
+          "methodological_warnings",
+          "user_confirmation_needed"
+        ]
+      },
+      "PrimaryTaskSuggestion": {
+        "type": "object",
+        "description": "Saran task ML utama (gabungan rule-based + LLM, prioritas LLM jika tersedia)",
+        "properties": {
+          "suggested_task": {
+            "type": "string",
+            "description": "Task ML yang disarankan"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Alasan pemilihan task"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "Kolom target",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "llm",
+              "rule_based"
+            ],
+            "description": "Sumber saran (LLM atau rule-based)"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Tingkat kepercayaan (hanya dari LLM)",
+            "nullable": true
+          },
+          "target_candidates": {
+            "type": "array",
+            "description": "Daftar kandidat target dengan alasan (hanya dari LLM)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                }
+              }
+            },
+            "nullable": true
+          },
+          "domain_guess": {
+            "type": "string",
+            "description": "Tebakan domain dataset (hanya dari LLM)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "suggested_task",
+          "reason",
+          "source"
+        ]
+      },
+      "ChartData": {
+        "type": "object",
+        "description": "Data chart EDA yang siap dirender oleh frontend (Recharts)",
+        "properties": {
+          "chart_type": {
+            "type": "string",
+            "enum": [
+              "bar",
+              "histogram",
+              "pie",
+              "scatter",
+              "boxplot",
+              "grouped_bar",
+              "horizontal_bar"
+            ],
+            "description": "Tipe chart"
+          },
+          "title": {
+            "type": "string",
+            "description": "Judul chart"
+          },
+          "data": {
+            "type": "array",
+            "description": "Data chart dalam format array of objects (struktur bervariasi tergantung tipe chart)",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "chart_type",
+          "title",
+          "data"
+        ]
+      },
+      "AnalyzeResponse": {
+        "type": "object",
+        "description": "Response lengkap hasil analisis dataset",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Indikator sukses"
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "overview": {
+            "$ref": "#/components/schemas/Overview"
+          },
+          "preview": {
+            "type": "array",
+            "description": "Preview 5 baris pertama",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "column_profiles": {
+            "type": "array",
+            "description": "Profil setiap kolom",
+            "items": {
+              "$ref": "#/components/schemas/ColumnProfile"
+            }
+          },
+          "data_quality": {
+            "$ref": "#/components/schemas/DataQuality"
+          },
+          "eda_charts": {
+            "type": "array",
+            "description": "Data visualisasi EDA untuk dirender di frontend",
+            "items": {
+              "$ref": "#/components/schemas/ChartData"
+            }
+          },
+          "dataset_fingerprint": {
+            "$ref": "#/components/schemas/DatasetFingerprint"
+          },
+          "rule_based_task_suggestion": {
+            "$ref": "#/components/schemas/RuleBasedTaskSuggestion"
+          },
+          "llm_understanding": {
+            "$ref": "#/components/schemas/LLMUnderstanding",
+            "nullable": true,
+            "description": "Hasil analisis LLM (null jika LLM tidak tersedia atau gagal)"
+          },
+          "primary_task_suggestion": {
+            "$ref": "#/components/schemas/PrimaryTaskSuggestion"
+          },
+          "preprocessing_previews": {
+            "type": "array",
+            "description": "Preview before/after preprocessing",
+            "items": {
+              "$ref": "#/components/schemas/PreprocessingPreview"
+            }
+          }
+        },
+        "required": [
+          "success",
+          "dataset_id",
+          "overview",
+          "preview",
+          "column_profiles",
+          "data_quality",
+          "eda_charts",
+          "dataset_fingerprint",
+          "rule_based_task_suggestion",
+          "primary_task_suggestion",
+          "preprocessing_previews"
+        ]
+      },
+      "LLMRequest": {
+        "type": "object",
+        "description": "Request untuk mendapatkan insight LLM secara standalone",
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "dataset_fingerprint": {
+            "$ref": "#/components/schemas/DatasetFingerprint"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "dataset_fingerprint"
+        ]
+      },
+      "LLMResponse": {
+        "type": "object",
+        "description": "Response dari endpoint LLM dataset understanding",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Indikator sukses"
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "llm_understanding": {
+            "$ref": "#/components/schemas/LLMUnderstanding",
+            "nullable": true,
+            "description": "Hasil analisis LLM (null jika gagal)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Pesan tambahan (contoh: keterangan LLM tidak tersedia)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "success",
+          "dataset_id"
+        ]
+      },
+      "ResearchTitleSuggestion": {
+        "type": "object",
+        "description": "Saran judul riset akademis dari LLM (bahasa Indonesia formal)",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Judul riset dalam bahasa Indonesia formal akademis"
+          },
+          "description": {
+            "type": "string",
+            "description": "Deskripsi singkat tentang fokus riset"
+          },
+          "task": {
+            "type": "string",
+            "enum": [
+              "binary_classification",
+              "multiclass_classification",
+              "regression",
+              "count_regression",
+              "clustering_candidate"
+            ],
+            "description": "Task ML yang sesuai"
+          },
+          "method_suggestion": {
+            "type": "string",
+            "description": "Metode/approach ML yang direkomendasikan"
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "task",
+          "method_suggestion"
+        ]
+      },
+      "ResearchTaskSuggestion": {
+        "type": "object",
+        "description": "Saran task riset dengan metode dan metrik evaluasi",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Nama task ML"
+          },
+          "description": {
+            "type": "string",
+            "description": "Deskripsi mengapa task ini cocok"
+          },
+          "suitable_methods": {
+            "type": "array",
+            "description": "Metode ML yang cocok (minimal 3)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evaluation_metrics": {
+            "type": "array",
+            "description": "Metrik evaluasi yang sesuai",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "task",
+          "description",
+          "suitable_methods",
+          "evaluation_metrics"
+        ]
+      },
+      "ResearchPRDSuggestionsRequest": {
+        "type": "object",
+        "description": "Request untuk mendapatkan saran judul dan task riset",
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "dataset_fingerprint": {
+            "$ref": "#/components/schemas/DatasetFingerprint"
+          },
+          "llm_understanding": {
+            "$ref": "#/components/schemas/LLMUnderstanding",
+            "nullable": true,
+            "description": "Hasil analisis LLM sebelumnya (opsional)"
+          },
+          "primary_task_suggestion": {
+            "$ref": "#/components/schemas/PrimaryTaskSuggestion",
+            "nullable": true,
+            "description": "Primary task suggestion dari analisis sebelumnya (opsional)"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "dataset_fingerprint"
+        ]
+      },
+      "ResearchPRDSuggestionsResponse": {
+        "type": "object",
+        "description": "Response berisi saran judul, task, dan pertanyaan riset",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Indikator sukses"
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "title_suggestions": {
+            "type": "array",
+            "description": "3 pilihan judul riset",
+            "items": {
+              "$ref": "#/components/schemas/ResearchTitleSuggestion"
+            }
+          },
+          "task_suggestions": {
+            "type": "array",
+            "description": "2-3 saran task ML dengan metode dan metrik",
+            "items": {
+              "$ref": "#/components/schemas/ResearchTaskSuggestion"
+            }
+          },
+          "research_questions": {
+            "type": "array",
+            "description": "3-5 pertanyaan riset dalam bahasa Indonesia",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "success",
+          "dataset_id",
+          "title_suggestions",
+          "task_suggestions",
+          "research_questions"
+        ]
+      },
+      "ResearchPRDRequest": {
+        "type": "object",
+        "description": "Request untuk generate dokumen PRD riset lengkap dalam Markdown",
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "selected_title": {
+            "type": "string",
+            "description": "Judul riset yang dipilih (dari suggestions)"
+          },
+          "selected_task": {
+            "type": "string",
+            "description": "Task ML yang dipilih"
+          },
+          "research_background": {
+            "type": "string",
+            "description": "Latar belakang riset yang ditulis user"
+          },
+          "research_objectives": {
+            "type": "array",
+            "description": "Daftar tujuan riset",
+            "items": {
+              "type": "string"
+            }
+          },
+          "research_questions": {
+            "type": "array",
+            "description": "Daftar pertanyaan riset",
+            "items": {
+              "type": "string"
+            }
+          },
+          "target_column": {
+            "type": "string",
+            "description": "Kolom target (opsional)",
+            "nullable": true
+          },
+          "additional_notes": {
+            "type": "string",
+            "description": "Catatan tambahan (opsional)",
+            "nullable": true
+          },
+          "dataset_fingerprint": {
+            "$ref": "#/components/schemas/DatasetFingerprint"
+          },
+          "llm_understanding": {
+            "$ref": "#/components/schemas/LLMUnderstanding",
+            "nullable": true,
+            "description": "Hasil analisis LLM sebelumnya (opsional)"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "selected_title",
+          "selected_task",
+          "research_background",
+          "research_objectives",
+          "research_questions",
+          "dataset_fingerprint"
+        ]
+      },
+      "ResearchPRDResponse": {
+        "type": "object",
+        "description": "Response berisi dokumen PRD riset dalam format Markdown",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Indikator sukses"
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "ID dataset"
+          },
+          "prd_markdown": {
+            "type": "string",
+            "description": "Dokumen PRD dalam format Markdown (10 bagian)",
+            "example": "# PRD Riset: ...\n\n## 1. Latar Belakang\n..."
+          }
+        },
+        "required": [
+          "success",
+          "dataset_id",
+          "prd_markdown"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Response error standar FastAPI (HTTPException)",
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "Pesan error"
+          }
+        },
+        "required": [
+          "detail"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "API Key untuk LLM (OpenCode Zen API). Tidak diperlukan untuk endpoint dasar, hanya untuk komunikasi internal backend dengan LLM."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Dataset",
+      "description": "Endpoint untuk upload dan analisis dataset"
+    },
+    {
+      "name": "LLM",
+      "description": "Endpoint untuk integrasi LLM (Large Language Model) - memberikan insight berbasis AI"
+    },
+    {
+      "name": "Research",
+      "description": "Endpoint untuk generate saran dan dokumen PRD riset akademis"
+    }
+  ]
+}
