@@ -1,0 +1,6 @@
+INFO:     Will watch for changes in these directories: ['D:\\SEMESTER 6\\WEB SERVICE\\PemroUAS\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [16608] using StatReload
+INFO:     Started server process [7728]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

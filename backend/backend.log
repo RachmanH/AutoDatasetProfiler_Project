@@ -1,0 +1,5 @@
+INFO:     127.0.0.1:36561 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:36561 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:24856 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:24856 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:12416 - "GET / HTTP/1.1" 404 Not Found
